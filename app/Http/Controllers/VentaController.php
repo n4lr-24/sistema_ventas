@@ -6,7 +6,9 @@ use App\Models\Venta;
 use App\Models\DetalleVenta;
 use App\Models\Cliente;
 use App\Models\Producto;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 class VentaController extends Controller
 {
@@ -25,41 +27,55 @@ class VentaController extends Controller
             'cliente_id' => 'required|exists:clientes,id',
             'fecha_venta' => 'required|date',
             'estado' => 'required|in:pendiente,confirmada,cancelada',
-            'producto_id' => 'required|exists:productos,id',
-            'cantidad' => 'required|integer|min:1',
+            'productos' => 'required|array|min:1',
+            'productos.*.producto_id' => 'required|distinct|exists:productos,id',
+            'productos.*.cantidad' => 'required|integer|min:1',
         ]);
 
-        $producto = Producto::findOrFail($request->producto_id);
+        DB::transaction(function () use ($request) {
+            $totalVenta = 0;
+            $detalles = [];
 
-        // Validar que si el producto no tiene stock no se pueda generar una venta
-        if ($producto->stock <= 0 || $producto->stock < $request->cantidad) {
-            return redirect('/ventas')->withErrors([
-                'stock' => "No se puede generar la venta: el producto '{$producto->producto}' no tiene stock suficiente (Stock disponible: {$producto->stock})."
+            foreach ($request->productos as $item) {
+                $producto = Producto::whereKey($item['producto_id'])
+                    ->lockForUpdate()
+                    ->firstOrFail();
+
+                if ($request->estado !== 'cancelada' && $producto->stock < $item['cantidad']) {
+                    throw ValidationException::withMessages([
+                        'stock' => "No se puede generar la venta: el producto '{$producto->producto}' no tiene stock suficiente (Stock disponible: {$producto->stock}).",
+                    ]);
+                }
+
+                $total = $producto->precio * $item['cantidad'];
+                $totalVenta += $total;
+                $detalles[] = [
+                    'producto_id' => $producto->id,
+                    'cantidad' => $item['cantidad'],
+                    'precio_unitario' => $producto->precio,
+                    'total' => $total,
+                ];
+            }
+
+            $venta = Venta::create([
+                'cliente_id' => $request->cliente_id,
+                'fecha_venta' => $request->fecha_venta,
+                'estado' => $request->estado,
+                'total' => $totalVenta,
             ]);
-        }
 
-        $precioUnitario = $producto->precio;
-        $totalVenta = $precioUnitario * $request->cantidad;
+            foreach ($detalles as $detalle) {
+                DetalleVenta::create([
+                    'venta_id' => $venta->id,
+                    ...$detalle,
+                ]);
 
-        $venta = Venta::create([
-            'cliente_id' => $request->cliente_id,
-            'fecha_venta' => $request->fecha_venta,
-            'estado' => $request->estado,
-            'total' => $totalVenta,
-        ]);
-
-        DetalleVenta::create([
-            'venta_id' => $venta->id,
-            'producto_id' => $producto->id,
-            'cantidad' => $request->cantidad,
-            'precio_unitario' => $precioUnitario,
-            'total' => $totalVenta,
-        ]);
-
-        // Descontar stock si la venta no está cancelada
-        if ($request->estado !== 'cancelada') {
-            $producto->decrement('stock', $request->cantidad);
-        }
+                if ($request->estado !== 'cancelada') {
+                    Producto::whereKey($detalle['producto_id'])
+                        ->decrement('stock', $detalle['cantidad']);
+                }
+            }
+        });
 
         return redirect('/ventas')->with([
             'mensaje' => 'venta registrada'
@@ -104,4 +120,3 @@ class VentaController extends Controller
         ]);
     }
 }
-
