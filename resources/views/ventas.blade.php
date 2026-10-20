@@ -94,7 +94,6 @@
                                     </td>
                                 </tr>
 
-                                <!-- Modal Actualizar Venta -->
                                 <div class="modal fade" id="updateVentaModal{{ $v->id }}" tabindex="-1" aria-hidden="true">
                                     <div class="modal-dialog modal-lg">
                                         <div class="modal-content">
@@ -150,7 +149,6 @@
             </div>
         </div>
 
-        <!-- Modal Registrar Venta -->
         <div class="modal fade" id="createVentaModal" tabindex="-1" aria-hidden="true">
             <div class="modal-dialog">
                 <div class="modal-content">

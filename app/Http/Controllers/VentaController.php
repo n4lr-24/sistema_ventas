@@ -106,7 +106,6 @@ class VentaController extends Controller
     {
         $venta = Venta::findOrFail($id);
 
-        // Solo se pueden eliminar las ventas que tengan un status de cancelada o pendiente
         if (!in_array($venta->estado, ['pendiente', 'cancelada'])) {
             return redirect('/ventas')->withErrors([
                 'eliminar' => 'No se puede eliminar esta venta porque su estado es "' . $venta->estado . '". Solo se pueden eliminar ventas con estado pendiente o cancelada.'
